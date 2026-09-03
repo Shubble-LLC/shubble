@@ -20,24 +20,29 @@ type MapCanvasProps = {
 };
 
 // Free, no-API-key vector tiles - see https://openfreemap.org
-const OPENFREEMAP_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
+// "bright" has a warm off-white background, soft yellow/orange highways, and light blue water -
+// visually closer to Apple Maps' light style than "liberty" (which reads flatter/more saturated).
+const OPENFREEMAP_STYLE_URL = "https://tiles.openfreemap.org/styles/bright";
 
 // center on RPI
 const RPI_CENTER: [number, number] = [-73.675690, 42.730216]; // [lng, lat]
-const INITIAL_ZOOM = 15;
-const MIN_ZOOM = 13.5;
+// Lowered from the campus-only default so fitBounds() can zoom out enough to fit every stop,
+// even on the smaller embedded map size - it clamps the initial fit, not just manual zoom-out.
+const MIN_ZOOM = 12.5;
 const MAX_ZOOM = 19;
+const INITIAL_FIT_PADDING_PX = 60;
 
-// Fallback pan boundary, used only if routeData has no stops yet when the map is constructed.
+// Fallback view, used only if routeData has no stops yet when the map is constructed.
+const FALLBACK_CENTER = RPI_CENTER;
+const FALLBACK_ZOOM = 15;
 const FALLBACK_MAP_BOUNDS: [[number, number], [number, number]] = [
   [RPI_CENTER[0] - 0.03, RPI_CENTER[1] - 0.025],
   [RPI_CENTER[0] + 0.03, RPI_CENTER[1] + 0.025],
 ];
 
-// Pan boundary padded around the actual stop coordinates, so every stop on every route stays
-// reachable by panning (maxBounds constrains the visible viewport's edges, unlike MapKit's
-// camera-boundary which only constrained the center point - so this needs real headroom).
-function computeMapBounds(routeData: ShuttleRouteData | null): [[number, number], [number, number]] {
+type StopExtent = { minLat: number; maxLat: number; minLon: number; maxLon: number };
+
+function computeStopExtent(routeData: ShuttleRouteData | null): StopExtent | null {
   let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
 
   if (routeData) {
@@ -53,10 +58,32 @@ function computeMapBounds(routeData: ShuttleRouteData | null): [[number, number]
     }
   }
 
-  if (!isFinite(minLat)) return FALLBACK_MAP_BOUNDS;
+  return isFinite(minLat) ? { minLat, maxLat, minLon, maxLon } : null;
+}
+
+// Pan boundary padded around the actual stop coordinates, so every stop on every route stays
+// reachable by panning (maxBounds constrains the visible viewport's edges, unlike MapKit's
+// camera-boundary which only constrained the center point - so this needs real headroom).
+function computeMapBounds(extent: StopExtent | null): [[number, number], [number, number]] {
+  if (!extent) return FALLBACK_MAP_BOUNDS;
+  const { minLat, maxLat, minLon, maxLon } = extent;
 
   const latPadding = Math.max((maxLat - minLat) * 0.3, 0.01);
   const lonPadding = Math.max((maxLon - minLon) * 0.3, 0.01);
+  return [
+    [minLon - lonPadding, minLat - latPadding],
+    [maxLon + lonPadding, maxLat + latPadding],
+  ];
+}
+
+// Tight bounds (a little visual breathing room, not the generous pan padding above) used to
+// pick the initial zoom, so all stops are visible by default without the user needing to zoom out.
+function computeInitialViewBounds(extent: StopExtent | null): [[number, number], [number, number]] | null {
+  if (!extent) return null;
+  const { minLat, maxLat, minLon, maxLon } = extent;
+
+  const latPadding = Math.max((maxLat - minLat) * 0.12, 0.003);
+  const lonPadding = Math.max((maxLon - minLon) * 0.12, 0.003);
   return [
     [minLon - lonPadding, minLat - latPadding],
     [maxLon + lonPadding, maxLat + latPadding],
@@ -68,9 +95,14 @@ const STOPS_LAYER_ID = "shubble-stops-circles";
 const ROUTES_SOURCE_ID = "shubble-routes";
 const ROUTES_LAYER_ID = "shubble-routes-lines";
 
-const STOP_CIRCLE_RADIUS = 8;
-const STOP_DEFAULT_COLOR = { stroke: "#000000", fill: "#FFFFFF", fillOpacity: 0.5 };
-const STOP_HOVER_COLOR = { stroke: "#6699ff", fill: "#a1c3ff", fillOpacity: 0.7 };
+const STOPS_SHADOW_LAYER_ID = "shubble-stops-shadow";
+const ROUTES_CASING_LAYER_ID = "shubble-routes-casing";
+
+const STOP_CIRCLE_RADIUS = 6;
+// Solid white pin faces (Apple/Google-style stop dots) instead of the old translucent gray,
+// so they read as a distinct UI element on top of the basemap rather than a map annotation.
+const STOP_DEFAULT_COLOR = { stroke: "#8a8a8e", fill: "#FFFFFF", fillOpacity: 1 };
+const STOP_HOVER_COLOR = { stroke: "#3b82f6", fill: "#eaf2ff", fillOpacity: 1 };
 
 type StopFeature = {
   type: "Feature";
@@ -141,14 +173,20 @@ export default function MapCanvas({ routeData, setSelectedRoute, isFullscreen = 
   useEffect(() => {
     if (!mapRef.current) return;
 
+    const stopExtent = computeStopExtent(routeData);
+    const initialViewBounds = computeInitialViewBounds(stopExtent);
+
     const thisMap = new MapLibreMap({
       container: mapRef.current,
       style: OPENFREEMAP_STYLE_URL,
-      center: RPI_CENTER,
-      zoom: INITIAL_ZOOM,
+      // Fit all stops in view by default (padded a little) rather than a fixed zoom, so users
+      // see the whole service area first and can zoom in from there if they want.
+      ...(initialViewBounds
+        ? { bounds: initialViewBounds, fitBoundsOptions: { padding: INITIAL_FIT_PADDING_PX } }
+        : { center: FALLBACK_CENTER, zoom: FALLBACK_ZOOM }),
       minZoom: MIN_ZOOM,
       maxZoom: MAX_ZOOM,
-      maxBounds: computeMapBounds(routeData),
+      maxBounds: computeMapBounds(stopExtent),
       dragRotate: false,
       pitchWithRotate: false,
       touchPitch: false,
@@ -188,17 +226,45 @@ export default function MapCanvas({ routeData, setSelectedRoute, isFullscreen = 
     }
 
     map.addSource(ROUTES_SOURCE_ID, { type: "geojson", data: routesGeoJSON });
+    // A white casing under the colored line gives routes a bit of separation from the basemap
+    // (and from each other where they overlap), similar to how Apple/Google render transit lines.
+    map.addLayer({
+      id: ROUTES_CASING_LAYER_ID,
+      type: "line",
+      source: ROUTES_SOURCE_ID,
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": "#ffffff",
+        "line-width": 6,
+        "line-opacity": 0.9,
+      },
+    });
     map.addLayer({
       id: ROUTES_LAYER_ID,
       type: "line",
       source: ROUTES_SOURCE_ID,
+      layout: { "line-cap": "round", "line-join": "round" },
       paint: {
         "line-color": ["get", "color"],
-        "line-width": 2,
+        "line-width": 3.5,
       },
     });
 
     map.addSource(STOPS_SOURCE_ID, { type: "geojson", data: stopsGeoJSON });
+    // Soft drop shadow beneath the stop dots, offset slightly down, to lift them off the
+    // basemap the way Apple/Google Maps annotations sit above the map rather than on it.
+    map.addLayer({
+      id: STOPS_SHADOW_LAYER_ID,
+      type: "circle",
+      source: STOPS_SOURCE_ID,
+      paint: {
+        "circle-radius": STOP_CIRCLE_RADIUS + 1.5,
+        "circle-color": "#000000",
+        "circle-opacity": 0.25,
+        "circle-blur": 0.8,
+        "circle-translate": [0, 1],
+      },
+    });
     map.addLayer({
       id: STOPS_LAYER_ID,
       type: "circle",
