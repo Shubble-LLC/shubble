@@ -61,23 +61,8 @@ function computeStopExtent(routeData: ShuttleRouteData | null): StopExtent | nul
   return isFinite(minLat) ? { minLat, maxLat, minLon, maxLon } : null;
 }
 
-// Pan boundary padded around the actual stop coordinates, so every stop on every route stays
-// reachable by panning (maxBounds constrains the visible viewport's edges, unlike MapKit's
-// camera-boundary which only constrained the center point - so this needs real headroom).
-function computeMapBounds(extent: StopExtent | null): [[number, number], [number, number]] {
-  if (!extent) return FALLBACK_MAP_BOUNDS;
-  const { minLat, maxLat, minLon, maxLon } = extent;
-
-  const latPadding = Math.max((maxLat - minLat) * 0.3, 0.01);
-  const lonPadding = Math.max((maxLon - minLon) * 0.3, 0.01);
-  return [
-    [minLon - lonPadding, minLat - latPadding],
-    [maxLon + lonPadding, maxLat + latPadding],
-  ];
-}
-
-// Tight bounds (a little visual breathing room, not the generous pan padding above) used to
-// pick the initial zoom, so all stops are visible by default without the user needing to zoom out.
+// Tight bounds (a little visual breathing room) used to pick the initial zoom, so all stops are
+// visible by default without the user needing to zoom out.
 function computeInitialViewBounds(extent: StopExtent | null): [[number, number], [number, number]] | null {
   if (!extent) return null;
   const { minLat, maxLat, minLon, maxLon } = extent;
@@ -87,6 +72,24 @@ function computeInitialViewBounds(extent: StopExtent | null): [[number, number],
   return [
     [minLon - lonPadding, minLat - latPadding],
     [maxLon + lonPadding, maxLat + latPadding],
+  ];
+}
+
+// Pan boundary, expanded further out from the initial view so every stop stays reachable by
+// panning with room to spare. This MUST be derived from (and stay strictly wider than)
+// initialViewBounds rather than computed independently: MapLibre's maxBounds doesn't just cap
+// panning, it also forces a *minimum* zoom so the bounds always fill the viewport (no blank
+// space beyond them) - so a maxBounds that isn't comfortably wider than the initial fit target
+// silently overrides its padding and snaps the default view back in, discarding it entirely.
+function computeMapBounds(initialViewBounds: [[number, number], [number, number]] | null): [[number, number], [number, number]] {
+  if (!initialViewBounds) return FALLBACK_MAP_BOUNDS;
+  const [[west, south], [east, north]] = initialViewBounds;
+
+  const lonPadding = Math.max((east - west) * 0.5, 0.01);
+  const latPadding = Math.max((north - south) * 0.5, 0.01);
+  return [
+    [west - lonPadding, south - latPadding],
+    [east + lonPadding, north + latPadding],
   ];
 }
 
@@ -180,18 +183,21 @@ export default function MapCanvas({ routeData, setSelectedRoute, isFullscreen = 
       container: mapRef.current,
       style: OPENFREEMAP_STYLE_URL,
       // Fit all stops in view by default (padded a little) rather than a fixed zoom, so users
-      // see the whole service area first and can zoom in from there if they want.
+      // see the whole service area first and can zoom in from there if they want. maxBounds is
+      // deliberately NOT set here - passing it alongside bounds/fitBoundsOptions makes MapLibre's
+      // constructor-time fitBounds() ignore the padding entirely (verified empirically). It's
+      // applied via setMaxBounds() below instead, once the initial fit has already resolved.
       ...(initialViewBounds
         ? { bounds: initialViewBounds, fitBoundsOptions: { padding: INITIAL_FIT_PADDING_PX } }
         : { center: FALLBACK_CENTER, zoom: FALLBACK_ZOOM }),
       minZoom: MIN_ZOOM,
       maxZoom: MAX_ZOOM,
-      maxBounds: computeMapBounds(stopExtent),
       dragRotate: false,
       pitchWithRotate: false,
       touchPitch: false,
     });
 
+    thisMap.setMaxBounds(computeMapBounds(initialViewBounds));
     thisMap.touchZoomRotate.disableRotation();
     thisMap.addControl(new NavigationControl({ showCompass: false }), "top-right");
     thisMap.addControl(new GeolocateControl({ trackUserLocation: true }), "top-right");
