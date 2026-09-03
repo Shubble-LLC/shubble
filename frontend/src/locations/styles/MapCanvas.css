@@ -7,19 +7,6 @@
     cursor: default;
 }
 
-/* Hover effects for map overlays */
-.map {
-    cursor: default;
-}
-
-.map .mk-overlay-circle:hover {
-    cursor: pointer !important;
-}
-
-.map:hover {
-    cursor: grab;
-}
-
 @media (max-width: 768px) {
     .map {
         width: 100%;

@@ -1,0 +1,280 @@
+import { useEffect, useRef, useState } from "react";
+import { Map as MapLibreMap, NavigationControl, GeolocateControl, Popup, setWorkerUrl } from "maplibre-gl";
+import type { GeoJSONSource, MapLayerMouseEvent } from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+import "../locations/styles/MapCanvas.css";
+
+import type { ShuttleRouteData, ShuttleStopData } from "../types/route";
+
+// MapLibre computes its worker script's URL relative to its own bundled module, which breaks
+// once Vite inlines it into the app bundle. copy-maplibre-worker.js copies the worker (and the
+// sibling chunk it imports) into public/ unbundled, verbatim, so this URL resolves correctly.
+setWorkerUrl("/maplibre-gl/maplibre-gl-worker.mjs");
+
+type MapCanvasProps = {
+  routeData: ShuttleRouteData | null;
+  selectedRoute?: string | null;
+  setSelectedRoute?: (route: string | null) => void;
+  isFullscreen?: boolean;
+  onMapReady?: (map: MapLibreMap) => void;
+};
+
+// Free, no-API-key vector tiles - see https://openfreemap.org
+const OPENFREEMAP_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
+
+// center on RPI
+const RPI_CENTER: [number, number] = [-73.675690, 42.730216]; // [lng, lat]
+const INITIAL_ZOOM = 15;
+const MIN_ZOOM = 13.5;
+const MAX_ZOOM = 19;
+
+// Fallback pan boundary, used only if routeData has no stops yet when the map is constructed.
+const FALLBACK_MAP_BOUNDS: [[number, number], [number, number]] = [
+  [RPI_CENTER[0] - 0.03, RPI_CENTER[1] - 0.025],
+  [RPI_CENTER[0] + 0.03, RPI_CENTER[1] + 0.025],
+];
+
+// Pan boundary padded around the actual stop coordinates, so every stop on every route stays
+// reachable by panning (maxBounds constrains the visible viewport's edges, unlike MapKit's
+// camera-boundary which only constrained the center point - so this needs real headroom).
+function computeMapBounds(routeData: ShuttleRouteData | null): [[number, number], [number, number]] {
+  let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
+
+  if (routeData) {
+    for (const thisRouteData of Object.values(routeData)) {
+      for (const stopKey of thisRouteData.STOPS) {
+        const stopData = thisRouteData[stopKey] as ShuttleStopData;
+        const [lat, lon] = stopData.COORDINATES;
+        minLat = Math.min(minLat, lat);
+        maxLat = Math.max(maxLat, lat);
+        minLon = Math.min(minLon, lon);
+        maxLon = Math.max(maxLon, lon);
+      }
+    }
+  }
+
+  if (!isFinite(minLat)) return FALLBACK_MAP_BOUNDS;
+
+  const latPadding = Math.max((maxLat - minLat) * 0.3, 0.01);
+  const lonPadding = Math.max((maxLon - minLon) * 0.3, 0.01);
+  return [
+    [minLon - lonPadding, minLat - latPadding],
+    [maxLon + lonPadding, maxLat + latPadding],
+  ];
+}
+
+const STOPS_SOURCE_ID = "shubble-stops";
+const STOPS_LAYER_ID = "shubble-stops-circles";
+const ROUTES_SOURCE_ID = "shubble-routes";
+const ROUTES_LAYER_ID = "shubble-routes-lines";
+
+const STOP_CIRCLE_RADIUS = 8;
+const STOP_DEFAULT_COLOR = { stroke: "#000000", fill: "#FFFFFF", fillOpacity: 0.5 };
+const STOP_HOVER_COLOR = { stroke: "#6699ff", fill: "#a1c3ff", fillOpacity: 0.7 };
+
+type StopFeature = {
+  type: "Feature";
+  id: number;
+  properties: { routeKey: string; stopKey: string; stopName: string };
+  geometry: { type: "Point"; coordinates: [number, number] };
+};
+
+type RouteFeature = {
+  type: "Feature";
+  properties: { color: string };
+  geometry: { type: "LineString"; coordinates: [number, number][] };
+};
+
+function buildStopsGeoJSON(routeData: ShuttleRouteData) {
+  const features: StopFeature[] = [];
+  let id = 0;
+  for (const [route, thisRouteData] of Object.entries(routeData)) {
+    for (const stopKey of thisRouteData.STOPS) {
+      const stopData = thisRouteData[stopKey] as ShuttleStopData;
+      const [lat, lon] = stopData.COORDINATES;
+      features.push({
+        type: "Feature",
+        id: id++,
+        properties: { routeKey: route, stopKey, stopName: stopData.NAME },
+        geometry: { type: "Point", coordinates: [lon, lat] },
+      });
+    }
+  }
+  return { type: "FeatureCollection" as const, features };
+}
+
+function buildRoutesGeoJSON(routeData: ShuttleRouteData) {
+  const features: RouteFeature[] = [];
+  for (const thisRouteData of Object.values(routeData)) {
+    for (const segment of thisRouteData.ROUTES ?? []) {
+      if (!segment || segment.length === 0) continue;
+      features.push({
+        type: "Feature",
+        properties: { color: thisRouteData.COLOR },
+        geometry: {
+          type: "LineString",
+          coordinates: segment.map(([lat, lon]) => [lon, lat]),
+        },
+      });
+    }
+  }
+  return { type: "FeatureCollection" as const, features };
+}
+
+// Hides POI labels from the base style, mirroring MapKit's showsPointsOfInterest: false
+function hidePoiLayers(map: MapLibreMap) {
+  const layers = map.getStyle()?.layers ?? [];
+  for (const layer of layers) {
+    if ("source-layer" in layer && layer["source-layer"] === "poi") {
+      map.setLayoutProperty(layer.id, "visibility", "none");
+    }
+  }
+}
+
+export default function MapCanvas({ routeData, setSelectedRoute, isFullscreen = false, onMapReady }: MapCanvasProps) {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const [map, setMap] = useState<MapLibreMap | null>(null);
+  const selectedPopupRef = useRef<Popup | null>(null);
+  const hoveredStopIdRef = useRef<number | null>(null);
+
+  // create the map (once)
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    const thisMap = new MapLibreMap({
+      container: mapRef.current,
+      style: OPENFREEMAP_STYLE_URL,
+      center: RPI_CENTER,
+      zoom: INITIAL_ZOOM,
+      minZoom: MIN_ZOOM,
+      maxZoom: MAX_ZOOM,
+      maxBounds: computeMapBounds(routeData),
+      dragRotate: false,
+      pitchWithRotate: false,
+      touchPitch: false,
+    });
+
+    thisMap.touchZoomRotate.disableRotation();
+    thisMap.addControl(new NavigationControl({ showCompass: false }), "top-right");
+    thisMap.addControl(new GeolocateControl({ trackUserLocation: true }), "top-right");
+
+    thisMap.on("load", () => {
+      hidePoiLayers(thisMap);
+      setMap(thisMap);
+      if (onMapReady) onMapReady(thisMap);
+    });
+
+    return () => {
+      thisMap.remove();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // add/update routes and stops, and wire up stop hover/click interactions
+  useEffect(() => {
+    if (!map || !routeData) return;
+
+    const stopsGeoJSON = buildStopsGeoJSON(routeData);
+    const routesGeoJSON = buildRoutesGeoJSON(routeData);
+
+    const stopsSource = map.getSource(STOPS_SOURCE_ID) as GeoJSONSource | undefined;
+    const routesSource = map.getSource(ROUTES_SOURCE_ID) as GeoJSONSource | undefined;
+
+    if (stopsSource && routesSource) {
+      // sources already exist (e.g. routeData reference changed on a re-render) - just refresh the data
+      stopsSource.setData(stopsGeoJSON);
+      routesSource.setData(routesGeoJSON);
+      return;
+    }
+
+    map.addSource(ROUTES_SOURCE_ID, { type: "geojson", data: routesGeoJSON });
+    map.addLayer({
+      id: ROUTES_LAYER_ID,
+      type: "line",
+      source: ROUTES_SOURCE_ID,
+      paint: {
+        "line-color": ["get", "color"],
+        "line-width": 2,
+      },
+    });
+
+    map.addSource(STOPS_SOURCE_ID, { type: "geojson", data: stopsGeoJSON });
+    map.addLayer({
+      id: STOPS_LAYER_ID,
+      type: "circle",
+      source: STOPS_SOURCE_ID,
+      paint: {
+        "circle-radius": STOP_CIRCLE_RADIUS,
+        "circle-color": [
+          "case",
+          ["boolean", ["feature-state", "hover"], false],
+          STOP_HOVER_COLOR.fill,
+          STOP_DEFAULT_COLOR.fill,
+        ],
+        "circle-opacity": [
+          "case",
+          ["boolean", ["feature-state", "hover"], false],
+          STOP_HOVER_COLOR.fillOpacity,
+          STOP_DEFAULT_COLOR.fillOpacity,
+        ],
+        "circle-stroke-width": 2,
+        "circle-stroke-color": [
+          "case",
+          ["boolean", ["feature-state", "hover"], false],
+          STOP_HOVER_COLOR.stroke,
+          STOP_DEFAULT_COLOR.stroke,
+        ],
+      },
+    });
+
+    map.on("mousemove", STOPS_LAYER_ID, (e: MapLayerMouseEvent) => {
+      const feature = e.features?.[0];
+      if (!feature || typeof feature.id !== "number") return;
+
+      if (hoveredStopIdRef.current !== null && hoveredStopIdRef.current !== feature.id) {
+        map.setFeatureState({ source: STOPS_SOURCE_ID, id: hoveredStopIdRef.current }, { hover: false });
+      }
+      hoveredStopIdRef.current = feature.id;
+      map.setFeatureState({ source: STOPS_SOURCE_ID, id: feature.id }, { hover: true });
+      map.getCanvas().style.cursor = "pointer";
+    });
+
+    map.on("mouseleave", STOPS_LAYER_ID, () => {
+      if (hoveredStopIdRef.current !== null) {
+        map.setFeatureState({ source: STOPS_SOURCE_ID, id: hoveredStopIdRef.current }, { hover: false });
+        hoveredStopIdRef.current = null;
+      }
+      map.getCanvas().style.cursor = "";
+    });
+
+    map.on("click", STOPS_LAYER_ID, (e: MapLayerMouseEvent) => {
+      const feature = e.features?.[0];
+      if (!feature || feature.geometry.type !== "Point") return;
+
+      const { routeKey, stopName } = feature.properties as { routeKey: string; stopKey: string; stopName: string };
+      const [lon, lat] = feature.geometry.coordinates;
+
+      selectedPopupRef.current?.remove();
+      selectedPopupRef.current = new Popup({ closeButton: true })
+        .setLngLat([lon, lat])
+        .setText(stopName)
+        .addTo(map);
+
+      // Only change schedule selection on desktop-sized screens
+      const isDesktop = window.matchMedia("(min-width: 800px)").matches;
+      if (isDesktop && setSelectedRoute && routeKey) {
+        setSelectedRoute(routeKey);
+      }
+    });
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, routeData]);
+
+  return (
+    <div
+      className={isFullscreen ? "map-fullscreen" : "map"}
+      ref={mapRef}
+    >
+    </div>
+  );
+}

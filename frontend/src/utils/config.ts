@@ -2,14 +2,12 @@ interface Config {
     isStaging: boolean;
     isDev: boolean;
     apiBaseUrl: string;
-    mapkitKey: string;
     staticETAs: boolean;
 }
 
 type ConfigJSON = {
     deployMode?: string;
     apiBaseUrl?: string;
-    mapkitKey?: string;
     staticETAs?: boolean | string;
 }
 
@@ -30,7 +28,6 @@ export async function loadConfig(): Promise<Config> {
             isStaging,
             isDev: isStaging,
             apiBaseUrl: json.apiBaseUrl ?? '',
-            mapkitKey: json.mapkitKey || '',
             staticETAs: json.staticETAs === true || json.staticETAs === 'true'
         };
     } catch {
@@ -39,7 +36,6 @@ export async function loadConfig(): Promise<Config> {
             isStaging: true,
             isDev: true,
             apiBaseUrl: '',
-            mapkitKey: import.meta.env.VITE_MAPKIT_KEY as string || '',
             staticETAs: import.meta.env.VITE_STATIC_ETAS === 'true'
         };
     }
@@ -58,6 +54,5 @@ export default {
     get isStaging() { return getConfig().isStaging; },
     get isDev() { return getConfig().isDev; },
     get apiBaseUrl() { return getConfig().apiBaseUrl; },
-    get mapkitKey() { return getConfig().mapkitKey; },
     get staticETAs() { return getConfig().staticETAs; }
 };

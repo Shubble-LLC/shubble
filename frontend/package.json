@@ -4,12 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/generate-config.js && node ../shared/parseSchedule.js && shx cp -r ../shared/ src/ && vite",
-    "build": "node scripts/generate-config.js && node ../shared/parseSchedule.js && shx cp -r ../shared/ src/ && vite build",
+    "dev": "node scripts/generate-config.js && node scripts/copy-maplibre-worker.js && node ../shared/parseSchedule.js && shx cp -r ../shared/ src/ && vite",
+    "build": "node scripts/generate-config.js && node scripts/copy-maplibre-worker.js && node ../shared/parseSchedule.js && shx cp -r ../shared/ src/ && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "maplibre-gl": "^6.7.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-icons": "^5.6.0",
@@ -17,7 +18,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
-    "@types/apple-mapkit-js-browser": "^5.78.1",
     "@types/node": "^25.6.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

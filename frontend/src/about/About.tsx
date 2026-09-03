@@ -51,7 +51,7 @@ export default function About() {
           <div className='about-content'>
             <div className='about-text'>
               <p>
-                Shubble is the latest shuttle tracker, built using modern web technologies including MapKit JS, React, and FastAPI.
+                Shubble is the latest shuttle tracker, built using modern web technologies including MapLibre GL JS, React, and FastAPI.
                 Our mission is to make campus transportation more reliable and predictable for students.
               </p>
               <p>

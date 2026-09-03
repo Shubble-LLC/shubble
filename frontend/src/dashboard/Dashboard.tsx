@@ -94,7 +94,6 @@ export default function Data() {
                   dataToDisplay={["..."]}
                 /> */}
                 <div className="map-container">
-                  {/* <MapKitMap vehicles={shuttleData} /> */}
                 </div>
               </div>
             ) : (

@@ -29,7 +29,6 @@ try {
 const config = {
   apiBaseUrl: '',
   deployMode: process.env.DEPLOY_MODE || 'development',
-  mapkitKey: process.env.MAPKIT_KEY || '',
   staticETAs: process.env.STATIC_ETAS === 'true'
 };
 

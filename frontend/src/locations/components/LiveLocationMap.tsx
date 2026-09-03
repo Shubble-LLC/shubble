@@ -1,22 +1,21 @@
 import { useEffect, useState, useMemo } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import '../styles/MapKitMap.css';
 import ShuttleIcon from "./ShuttleIcon";
 import config from "../../utils/config";
 
+import type { Map as MapLibreMap, Marker } from "maplibre-gl";
 import type { ShuttleRouteData } from "../../types/route";
 import type { VehicleLocationMap, VehicleVelocityMap, VehicleCombinedMap } from "../../types/vehicleLocation";
 import type { Coordinate } from "../../utils/mapUtils";
 
-import MapKitCanvas from "../../mapkit/MapKitCanvas";
-import MapKitAnimation from "../../mapkit/MapKitAnimation";
-import type { AnimatedAnnotation } from "../../mapkit/MapKitAnimation";
-import MapKitOverlays from "../../mapkit/MapKitOverlays";
+import MapCanvas from "../../maplibre/MapCanvas";
+import MapAnimation from "../../maplibre/MapAnimation";
+import type { AnimatedAnnotation } from "../../maplibre/MapAnimation";
+import MapOverlays from "../../maplibre/MapOverlays";
 
-type LiveLocationMapKitProps = {
+type LiveLocationMapProps = {
   routeData: ShuttleRouteData | null;
   displayVehicles?: boolean;
-  generateRoutes?: boolean;
   selectedRoute?: string | null;
   setSelectedRoute?: (route: string | null) => void;
   isFullscreen?: boolean;
@@ -24,19 +23,18 @@ type LiveLocationMapKitProps = {
   shuttleIconSize?: number;
 };
 
-export default function LiveLocationMapKit({
+export default function LiveLocationMap({
   routeData,
   displayVehicles = true,
-  generateRoutes = false,
   selectedRoute,
   setSelectedRoute,
   isFullscreen = false,
   showTrueLocation = true,
   shuttleIconSize = 25,
-}: LiveLocationMapKitProps) {
-  const [map, setMap] = useState<(mapkit.Map | null)>(null);
+}: LiveLocationMapProps) {
+  const [map, setMap] = useState<MapLibreMap | null>(null);
   const [vehicles, setVehicles] = useState<VehicleCombinedMap | null>(null);
-  const [vehicleAnnotations, setVehicleAnnotations] = useState<Record<string, mapkit.Annotation>>({});
+  const [vehicleAnnotations, setVehicleAnnotations] = useState<Record<string, Marker>>({});
 
   // Fetch location and velocity data on component mount and set up polling
   useEffect(() => {
@@ -88,7 +86,7 @@ export default function LiveLocationMapKit({
             current_stop: velocity?.current_stop,
           };
         }
-        
+
         setVehicles(combined);
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') return;
@@ -132,7 +130,7 @@ export default function LiveLocationMapKit({
 
   // Compute vehicle annotation props (list)
   const vehicleAnnotationProps = useMemo(() => {
-    // We need map to be initialized to create mapkit.Coordinate
+    // We need the map to be initialized before markers can be placed
     if (!vehicles || !routeData || !map) return [];
 
     const list: AnimatedAnnotation[] = [];
@@ -151,8 +149,7 @@ export default function LiveLocationMapKit({
       })();
 
       // Render ShuttleIcon JSX to a static SVG string
-      const svgString = renderToStaticMarkup(<ShuttleIcon color={routeColor} size={shuttleIconSize} />);
-      const svgShuttle = `data:image/svg+xml;base64,${btoa(svgString)}`;
+      const svgHtml = renderToStaticMarkup(<ShuttleIcon color={routeColor} size={shuttleIconSize} />);
 
       // Use predicted speed if available, otherwise fall back to reported speed
       // If showTrueLocation is true, set speed to 0 to disable animation
@@ -170,19 +167,20 @@ export default function LiveLocationMapKit({
 
       list.push({
         id: key,
-        coordinate: new window.mapkit.Coordinate(vehicle.latitude, vehicle.longitude),
+        lngLat: [vehicle.longitude, vehicle.latitude],
         title: vehicle.name,
         subtitle: `${displaySpeed.toFixed(1)} mph`,
-        url: { 1: svgShuttle },
-        size: { width: shuttleIconSize, height: shuttleIconSize },
-        anchorOffset: new DOMPoint(0, -13),
+        svgHtml,
+        size: shuttleIconSize,
 
         // AnimatedAnnotation specific
         heading: vehicle.heading_degrees,
         speedMph: vehicle.speed_mph,
         predictedSpeedKmh: vehicle.predicted_location?.speed_kmh,
         timestamp: new Date(vehicle.timestamp).getTime(),
-        routePolyline: routePolyline
+        segmentIndex: vehicle.segment_index ?? 0,
+        routePolylineIndex: vehicle.polyline_index ?? 0,
+        routePolyline: routePolyline ? [routePolyline] : undefined,
       });
     });
 
@@ -191,20 +189,19 @@ export default function LiveLocationMapKit({
 
   return (
     <>
-      <MapKitCanvas
+      <MapCanvas
         routeData={routeData}
-        generateRoutes={generateRoutes}
         selectedRoute={selectedRoute}
         setSelectedRoute={setSelectedRoute}
         isFullscreen={isFullscreen}
         onMapReady={setMap}
       />
-      <MapKitOverlays
+      <MapOverlays
         map={map}
         overlays={vehicleAnnotationProps}
         onAnnotationsReady={setVehicleAnnotations}
       />
-      <MapKitAnimation
+      <MapAnimation
         annotations={vehicleAnnotationProps}
         vehicleAnnotations={vehicleAnnotations}
         showTrueLocation={showTrueLocation}

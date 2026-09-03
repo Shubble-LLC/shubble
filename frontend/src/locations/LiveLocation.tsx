@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import LiveLocationMapKit from './components/LiveLocationMapKit';
+import LiveLocationMap from './components/LiveLocationMap';
 import Schedule from '../schedule/Schedule';
 import "./styles/LiveLocation.css";
 import routeData from '../shared/routes.json';
@@ -19,7 +19,7 @@ export default function LiveLocation() {
 
   return (
     <div className="live-location-div">
-      <LiveLocationMapKit
+      <LiveLocationMap
         routeData={filteredRouteData}
         selectedRoute={selectedRoute}
         setSelectedRoute={setSelectedRoute}

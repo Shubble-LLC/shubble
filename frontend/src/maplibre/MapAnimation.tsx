@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import type { KeyedAnnotation } from "./MapKitOverlays";
+import type { Marker } from "maplibre-gl";
+import type { KeyedAnnotation } from "./MapOverlays";
 import {
   type Coordinate,
   moveAlongPolyline,
@@ -25,17 +26,17 @@ type AnimationState = {
   lastServerTime: number;
 };
 
-type MapKitAnimationProps = {
+type MapAnimationProps = {
   annotations: AnimatedAnnotation[];
-  vehicleAnnotations: Record<string, mapkit.Annotation>;
+  vehicleAnnotations: Record<string, Marker>;
   showTrueLocation: boolean;
 };
 
-export default function MapKitAnimation({
+export default function MapAnimation({
   annotations,
   vehicleAnnotations,
   showTrueLocation,
-}: MapKitAnimationProps) {
+}: MapAnimationProps) {
   const vehicleAnimationStates = useRef<Record<string, AnimationState>>({});
   const animationFrameId = useRef<number | null>(null);
 
@@ -57,8 +58,8 @@ export default function MapKitAnimation({
 
       // Use the coordinate from the annotation props (source of truth from server)
       const vehicleCoord: Coordinate = {
-        latitude: annotation.coordinate.latitude,
-        longitude: annotation.coordinate.longitude,
+        latitude: annotation.lngLat[1],
+        longitude: annotation.lngLat[0],
       };
 
       const serverTime = annotation.timestamp; // already number? or Date? Assuming number based on usage.
@@ -80,8 +81,8 @@ export default function MapKitAnimation({
       // Step 1: Calculate where the shuttle will be in 5 seconds
       // Use predicted speed if available, otherwise fall back to reported speed
       // If showTrueLocation is true, use 0 speed to disable animation
-      const speedMph = annotation.predictedSpeedKmh 
-        ? annotation.predictedSpeedKmh * 0.621371 
+      const speedMph = annotation.predictedSpeedKmh
+        ? annotation.predictedSpeedKmh * 0.621371
         : annotation.speedMph;
       // Convert speed from mph to meters/second (1 mph = 0.44704 m/s)
       const speedMetersPerSecond = speedMph * 0.44704;
@@ -105,7 +106,7 @@ export default function MapKitAnimation({
         // If so, snap to the server position to avoid animating across a discontinuity
         // between route legs. Otherwise, keep the current visual position.
         const polylineChanged = animState.polylineIndex !== annotation.routePolylineIndex;
- 
+
         vehicleAnimationStates.current[annotation.id] = {
           lastUpdateTime: now,
           polylineIndex: annotation.routePolylineIndex,
@@ -141,11 +142,11 @@ export default function MapKitAnimation({
       // We need to iterate over *current* animation states
       Object.keys(vehicleAnimationStates.current).forEach(key => {
         const animState = vehicleAnimationStates.current[key];
-        const annotation = vehicleAnnotations[key] as mapkit.ShuttleAnnotation;
+        const marker = vehicleAnnotations[key];
         // Find the data object corresponding to this key to get the route
         const dataAnnotation = annotations.find(a => a.id === key);
 
-        if (!dataAnnotation || !annotation || !animState) return;
+        if (!dataAnnotation || !marker || !animState) return;
         if (!dataAnnotation.routePolyline) return;
 
         const currentPolyline = dataAnnotation.routePolyline[animState.polylineIndex];
@@ -182,8 +183,8 @@ export default function MapKitAnimation({
         animState.currentPoint = point;
         animState.distanceTraveled = targetPosition;
 
-        // Update MapKit annotation
-        annotation.coordinate = new mapkit.Coordinate(point.latitude, point.longitude);
+        // Update marker position
+        marker.setLngLat([point.longitude, point.latitude]);
       });
 
       animationFrameId.current = requestAnimationFrame(animate);

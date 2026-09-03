@@ -8,7 +8,7 @@ import LiveLocation from './locations/LiveLocation';
 import Schedule from './schedule/Schedule';
 import About from './about/About';
 import Data from './dashboard/Dashboard';
-import LiveLocationMapKit from './locations/components/LiveLocationMapKit';
+import LiveLocationMap from './locations/components/LiveLocationMap';
 import rawRouteData from './shared/routes.json';
 import { useState, useEffect } from "react";
 import type { ShuttleRouteData } from './types/route';
@@ -52,13 +52,12 @@ function App() {
             <Route path='/schedule' element={<Schedule selectedRoute={selectedRoute} setSelectedRoute={setSelectedRoute} />} />
             <Route path='/about' element={<About />} />
             <Route path='/data' element={<Data />} />
-            <Route path='/generate-static-routes' element={<LiveLocationMapKit routeData={routeData} displayVehicles={true} generateRoutes={true} />} />
             <Route path='*' element={<NotFound />} />
           </Route>
 
           {/* without header and footer */}
           <Route>
-            <Route path='/map' element={<LiveLocationMapKit routeData={routeData} generateRoutes={false} selectedRoute={selectedRoute} setSelectedRoute={setSelectedRoute} isFullscreen={true} shuttleIconSize={35} />} />
+            <Route path='/map' element={<LiveLocationMap routeData={routeData} selectedRoute={selectedRoute} setSelectedRoute={setSelectedRoute} isFullscreen={true} shuttleIconSize={35} />} />
             <Route path='/apple-privacy-policy' element={<ApplePrivacyPolicy />} />
             <Route path='/apple-app-support' element={<AppleAppSupport />} />
           </Route>
