@@ -31,6 +31,9 @@ const RPI_CENTER: [number, number] = [-73.675690, 42.730216]; // [lng, lat]
 const MIN_ZOOM = 12.5;
 const MAX_ZOOM = 19;
 const INITIAL_FIT_PADDING_PX = 60;
+// Floor for the initial fit-all-stops zoom - fitBounds alone can compute something quite far
+// out on wide/short containers; this keeps the default view from feeling too zoomed out.
+const MIN_INITIAL_FIT_ZOOM = 13.75;
 
 // Fallback view, used only if routeData has no stops yet when the map is constructed.
 const FALLBACK_CENTER = RPI_CENTER;
@@ -198,6 +201,9 @@ export default function MapCanvas({ routeData, setSelectedRoute, isFullscreen = 
     });
 
     thisMap.setMaxBounds(computeMapBounds(initialViewBounds));
+    if (initialViewBounds && thisMap.getZoom() < MIN_INITIAL_FIT_ZOOM) {
+      thisMap.setZoom(MIN_INITIAL_FIT_ZOOM);
+    }
     thisMap.touchZoomRotate.disableRotation();
     thisMap.addControl(new NavigationControl({ showCompass: false }), "top-right");
     thisMap.addControl(new GeolocateControl({ trackUserLocation: true }), "top-right");
