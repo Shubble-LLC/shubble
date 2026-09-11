@@ -1410,6 +1410,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "redis" },
     { name = "sqlalchemy" },
+    { name = "tqdm" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1428,7 +1429,6 @@ ml = [
     { name = "seaborn" },
     { name = "statsmodels" },
     { name = "torch" },
-    { name = "tqdm" },
 ]
 
 [package.metadata]
@@ -1445,6 +1445,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "redis" },
     { name = "sqlalchemy", specifier = ">=2.0.41" },
+    { name = "tqdm", specifier = ">=4.67.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
 ]
 
@@ -1463,7 +1464,6 @@ ml = [
     { name = "seaborn" },
     { name = "statsmodels" },
     { name = "torch" },
-    { name = "tqdm", specifier = ">=4.67.1" },
 ]
 
 [[package]]

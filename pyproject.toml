@@ -17,9 +17,10 @@ dependencies = [
     "python-dotenv>=1.1.1",
     "redis",
     "brotli-asgi",
-    # Data processing (used by worker for DataFrame caching)
+    # Data processing (used by backend for route-matching DataFrame caching)
     "numpy",
     "pandas>=2.0.0,<4.0.0",
+    "tqdm>=4.67.1",
 ]
 
 [dependency-groups]
@@ -28,7 +29,6 @@ ml = [
     "scikit-learn",
     "matplotlib",
     "seaborn",
-    "tqdm>=4.67.1",
     "statsmodels",
     "scipy",
 ]
