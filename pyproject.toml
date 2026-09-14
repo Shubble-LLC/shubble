@@ -21,6 +21,7 @@ dependencies = [
     "numpy",
     "pandas>=2.0.0,<4.0.0",
     "tqdm>=4.67.1",
+    "scipy",
 ]
 
 [dependency-groups]
@@ -30,7 +31,6 @@ ml = [
     "matplotlib",
     "seaborn",
     "statsmodels",
-    "scipy",
 ]
 dev = [
     "pytest",

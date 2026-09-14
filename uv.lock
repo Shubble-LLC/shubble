@@ -1409,6 +1409,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
     { name = "redis" },
+    { name = "scipy" },
     { name = "sqlalchemy" },
     { name = "tqdm" },
     { name = "uvicorn", extra = ["standard"] },
@@ -1425,7 +1426,6 @@ dev = [
 ml = [
     { name = "matplotlib" },
     { name = "scikit-learn" },
-    { name = "scipy" },
     { name = "seaborn" },
     { name = "statsmodels" },
     { name = "torch" },
@@ -1444,6 +1444,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.7.0" },
     { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "redis" },
+    { name = "scipy" },
     { name = "sqlalchemy", specifier = ">=2.0.41" },
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
@@ -1460,7 +1461,6 @@ dev = [
 ml = [
     { name = "matplotlib" },
     { name = "scikit-learn" },
-    { name = "scipy" },
     { name = "seaborn" },
     { name = "statsmodels" },
     { name = "torch" },

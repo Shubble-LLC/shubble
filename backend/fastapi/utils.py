@@ -140,9 +140,12 @@ async def smart_closest_point(
 
             results[vehicle_id] = (distance, closest_point, route_name, polyline_idx, segment_idx, stop_name)
 
-    except Exception as e:
-        # If anything goes wrong, return None for all vehicles
-        logger.error(f"Error in smart_closest_point: {e}")
+    except Exception:
+        # If anything goes wrong, return None for all vehicles.
+        # Use logger.exception (not logger.error) so the full traceback is
+        # captured - this code path silently degrades every vehicle to
+        # route_name=None (gray on the map), so the cause must be visible.
+        logger.exception(f"Error in smart_closest_point for vehicle_ids={vehicle_ids}")
 
         for vehicle_id in vehicle_ids:
             results[vehicle_id] = (None, None, None, None, None, None)
