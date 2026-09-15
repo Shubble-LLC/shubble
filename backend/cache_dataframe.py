@@ -58,10 +58,29 @@ def process_raw_dataframe(raw_df: pd.DataFrame) -> pd.DataFrame:
     # We pass cache=False to disable disk caching (Redis cache is sufficient)
     # additive=True: Only compute closest points for rows with NaN values
     # require_majority_valid=False: Use strict majority for route cleaning (default behavior)
-    df = preprocess_pipeline(df=raw_df, preprocess=True, cache=False, additive=True)
-    df = segment_pipeline(df=df, segment=True, cache=False, min_segment_length=1,
-                         require_majority_valid=False, additive=True)
-    df = stops_pipeline(df=df, stops=True, cache=False)
+    #
+    # Each stage is wrapped so a failure identifies which stage broke (raw pandas
+    # tracebacks from inside these pipelines are otherwise hard to place) - the
+    # caller (smart_closest_point) already logs the full traceback, this just adds
+    # the missing "which of the 3 stages" context before re-raising unchanged.
+    try:
+        df = preprocess_pipeline(df=raw_df, preprocess=True, cache=False, additive=True)
+    except Exception:
+        logger.exception(f"preprocess_pipeline failed on raw_df.shape={raw_df.shape}")
+        raise
+
+    try:
+        df = segment_pipeline(df=df, segment=True, cache=False, min_segment_length=1,
+                             require_majority_valid=False, additive=True)
+    except Exception:
+        logger.exception(f"segment_pipeline failed on df.shape={df.shape}, df.columns={list(df.columns)}")
+        raise
+
+    try:
+        df = stops_pipeline(df=df, stops=True, cache=False)
+    except Exception:
+        logger.exception(f"stops_pipeline failed on df.shape={df.shape}, df.columns={list(df.columns)}")
+        raise
 
     return df
 

@@ -81,16 +81,34 @@ async def smart_closest_point(
     """
     results = {}
 
+    # Load cached dataframe with preprocessed route information. Kept in its own
+    # try/except (distinct from the per-vehicle extraction below) so the logs make
+    # clear whether the failure is in the ML pipeline itself (this call) or in
+    # reading the resulting dataframe (the loop below) - these have very different
+    # causes and fixes.
     try:
-        # Load cached dataframe with preprocessed route information
         df = await get_today_dataframe()
+    except Exception:
+        logger.exception(
+            f"get_today_dataframe() failed in smart_closest_point for "
+            f"{len(vehicle_ids)} vehicle_ids={vehicle_ids} - every vehicle will "
+            f"render with route_name=None (gray on the map) until this is fixed"
+        )
+        for vehicle_id in vehicle_ids:
+            results[vehicle_id] = (None, None, None, None, None, None)
+        return results
 
-        if df.empty:
-            # No cached data, return None for all vehicles
-            for vehicle_id in vehicle_ids:
-                results[vehicle_id] = (None, None, None, None, None, None)
-            return results
+    if df.empty:
+        logger.warning(
+            f"get_today_dataframe() returned an empty dataframe for "
+            f"vehicle_ids={vehicle_ids} - no processed location data available yet "
+            f"today, so every vehicle will render with route_name=None"
+        )
+        for vehicle_id in vehicle_ids:
+            results[vehicle_id] = (None, None, None, None, None, None)
+        return results
 
+    try:
         df['vehicle_id'] = df['vehicle_id'].astype(str)
         grouped = df.groupby('vehicle_id')
 
@@ -141,14 +159,19 @@ async def smart_closest_point(
             results[vehicle_id] = (distance, closest_point, route_name, polyline_idx, segment_idx, stop_name)
 
     except Exception:
-        # If anything goes wrong, return None for all vehicles.
-        # Use logger.exception (not logger.error) so the full traceback is
-        # captured - this code path silently degrades every vehicle to
+        # If anything goes wrong, return None for whichever vehicles we hadn't
+        # already extracted. Use logger.exception (not logger.error) so the full
+        # traceback is captured, plus the dataframe shape/columns actually in
+        # hand - this code path silently degrades those vehicles to
         # route_name=None (gray on the map), so the cause must be visible.
-        logger.exception(f"Error in smart_closest_point for vehicle_ids={vehicle_ids}")
-
+        logger.exception(
+            f"Error extracting closest-point rows in smart_closest_point for "
+            f"vehicle_ids={vehicle_ids} - df.shape={df.shape}, "
+            f"df.columns={list(df.columns)}"
+        )
         for vehicle_id in vehicle_ids:
-            results[vehicle_id] = (None, None, None, None, None, None)
+            if vehicle_id not in results:
+                results[vehicle_id] = (None, None, None, None, None, None)
 
     return results
 
