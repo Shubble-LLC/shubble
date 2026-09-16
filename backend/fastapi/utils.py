@@ -8,7 +8,7 @@ from backend.cache import cache
 from backend.function_timer import timed
 
 from backend.models import VehicleLocation, DriverVehicleAssignment, ETA, PredictedLocation
-from backend.cache_dataframe import get_today_dataframe
+from backend.cache_dataframe import update_today_dataframe
 from backend.utils import get_vehicles_in_geofence_query
 from backend.time_utils import get_campus_start_of_day
 
@@ -68,9 +68,12 @@ async def smart_closest_point(
     """
     Get the closest point data for each vehicle from the cached dataframe (cached for 15 seconds).
 
-    The cached dataframe (from get_today_dataframe) already contains preprocessed
-    route matching data from the ML pipeline. This function simply retrieves the
-    latest row for each vehicle and extracts the relevant columns.
+    Calls update_today_dataframe() (not get_today_dataframe()) so this function is
+    self-sufficient: it incrementally (re)computes route-matching itself - via
+    ml.pipelines, which only needs pandas/numpy/tqdm/scipy (core deps) - rather than
+    depending on the separate ml_worker service (which additionally needs
+    torch/scikit-learn/statsmodels just for ETA/velocity predictions) to keep the
+    Redis-cached dataframe warm. ml_worker is optional; route coloring is not.
 
     Args:
         vehicle_ids: List of vehicle IDs to get closest point data for
@@ -81,16 +84,16 @@ async def smart_closest_point(
     """
     results = {}
 
-    # Load cached dataframe with preprocessed route information. Kept in its own
-    # try/except (distinct from the per-vehicle extraction below) so the logs make
-    # clear whether the failure is in the ML pipeline itself (this call) or in
+    # Load/refresh the preprocessed dataframe with route-matching data. Kept in its
+    # own try/except (distinct from the per-vehicle extraction below) so the logs
+    # make clear whether the failure is in the ML pipeline itself (this call) or in
     # reading the resulting dataframe (the loop below) - these have very different
     # causes and fixes.
     try:
-        df = await get_today_dataframe()
+        df = await update_today_dataframe()
     except Exception:
         logger.exception(
-            f"get_today_dataframe() failed in smart_closest_point for "
+            f"update_today_dataframe() failed in smart_closest_point for "
             f"{len(vehicle_ids)} vehicle_ids={vehicle_ids} - every vehicle will "
             f"render with route_name=None (gray on the map) until this is fixed"
         )
@@ -100,7 +103,7 @@ async def smart_closest_point(
 
     if df.empty:
         logger.warning(
-            f"get_today_dataframe() returned an empty dataframe for "
+            f"update_today_dataframe() returned an empty dataframe for "
             f"vehicle_ids={vehicle_ids} - no processed location data available yet "
             f"today, so every vehicle will render with route_name=None"
         )
