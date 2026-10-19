@@ -5,6 +5,7 @@
       "STUDENT_UNION",
       "COLONIE",
       "GEORGIAN",
+      "BRINSMADE",
       "STAC_1",
       "STAC_2",
       "STAC_3",
@@ -17,6 +18,7 @@
       "COLONIE",
       "GHOST_STOP_1",
       "GEORGIAN",
+      "BRINSMADE",
       "STAC_1",
       "STAC_2",
       "STAC_3",
@@ -56,6 +58,14 @@
       ],
       "OFFSET": 5,
       "NAME": "Georgian"
+    },
+    "BRINSMADE": {
+      "COORDINATES": [
+        42.73566806939895,
+        -73.66520557949302
+      ],
+      "OFFSET": 6,
+      "NAME": "Brinsmade"
     },
     "STAC_1": {
       "COORDINATES": [
@@ -354,6 +364,16 @@
         [
           42.735782,
           -73.665837
+        ],
+        [
+          42.73566806939895,
+          -73.66520557949302
+        ]
+      ],
+      [
+        [
+          42.73566806939895,
+          -73.66520557949302
         ],
         [
           42.735664,
